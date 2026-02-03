@@ -41,11 +41,44 @@ impl EmailNotifier {
         }
     }
 
+    pub fn send_html(&self, subject: &str, html_body: &str) -> Result<bool> {
+        debug!("Building email message (HTML)");
+        let email = match Message::builder()
+            .from(self.sender.parse().unwrap())
+            .to(self.recipient.parse().unwrap())
+            .subject(subject)
+            .header(ContentType::TEXT_HTML)
+            .body(html_body.to_string())
+        {
+            Ok(email) => email,
+            Err(e) => return Err(e.into()),
+        };
+
+        let creds = Credentials::new(self.sender.clone(), self.password.clone());
+
+        debug!("Connecting to SMTP server");
+        let mailer = match SmtpTransport::relay(&self.smtp_host) {
+            Ok(builder) => builder.credentials(creds).port(self.smtp_port).build(),
+            Err(e) => return Err(e.into()),
+        };
+
+        match mailer.send(&email) {
+            Ok(_) => {
+                info!("Email notification sent: {}", subject);
+                Ok(true)
+            }
+            Err(e) => {
+                error!("Failed to send email notification: {:?}", e);
+                Ok(false)
+            }
+        }
+    }
+
 }
 
 impl Notifier for EmailNotifier {
     fn send(&self, subject: &str, message: &str) -> Result<bool> {
-        debug!("Building email message");
+        debug!("Building email message (plain text)");
         let email = match Message::builder()
             .from(self.sender.parse().unwrap())
             .to(self.recipient.parse().unwrap())
