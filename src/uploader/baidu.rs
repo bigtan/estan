@@ -1,6 +1,6 @@
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
-use reqwest::blocking::{multipart, Client};
+use reqwest::blocking::{Client, multipart};
 use serde::{Deserialize, Serialize};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
@@ -9,8 +9,8 @@ use std::thread::sleep;
 use std::time::Duration as StdDuration;
 use tracing::{debug, info, warn};
 
-use crate::uploader::Uploader;
 use crate::Result;
+use crate::uploader::Uploader;
 
 const BASE_URL: &str = "https://pan.baidu.com/rest/2.0/xpan/";
 const OAUTH_URL: &str = "https://openapi.baidu.com/oauth/2.0/";
@@ -134,14 +134,13 @@ impl BaiduPanUploader {
             return Ok(());
         }
 
-        let mut file = File::open(&self.config_file)
-            .context("Failed to open token config file")?;
+        let mut file = File::open(&self.config_file).context("Failed to open token config file")?;
         let mut contents = String::new();
         file.read_to_string(&mut contents)
             .context("Failed to read token config file")?;
 
-        let token_data: TokenData = serde_json::from_str(&contents)
-            .context("Failed to parse token data")?;
+        let token_data: TokenData =
+            serde_json::from_str(&contents).context("Failed to parse token data")?;
 
         self.token_data = Some(token_data);
         info!("Tokens loaded from config file");
@@ -278,9 +277,7 @@ impl BaiduPanUploader {
         if user_info.errno == 0 {
             info!(
                 "Authorization successful. Hello, {}!",
-                user_info
-                    .baidu_name
-                    .unwrap_or_else(|| "User".to_string())
+                user_info.baidu_name.unwrap_or_else(|| "User".to_string())
             );
             if let (Some(total), Some(used)) = (user_info.total, user_info.used) {
                 info!("Total storage: {:.2} GB", total as f64 / (1024_f64.powi(3)));
@@ -307,12 +304,7 @@ impl BaiduPanUploader {
     }
 
     /// Get upload server for chunk upload
-    fn get_upload_server(
-        &self,
-        access_token: &str,
-        path: &str,
-        upload_id: &str,
-    ) -> Result<String> {
+    fn get_upload_server(&self, access_token: &str, path: &str, upload_id: &str) -> Result<String> {
         let encoded_path = urlencoding::encode(path);
         let url = format!(
             "{}file?method=locateupload&appid=250528&access_token={}&path={}&uploadid={}&upload_version=2.0",
@@ -325,7 +317,9 @@ impl BaiduPanUploader {
         if locate_result.error_code != 0 {
             anyhow::bail!(
                 "Failed to locate upload server: {}",
-                locate_result.error_msg.unwrap_or_else(|| "unknown error".to_string())
+                locate_result
+                    .error_msg
+                    .unwrap_or_else(|| "unknown error".to_string())
             );
         }
 
@@ -386,7 +380,10 @@ impl BaiduPanUploader {
 
         // 2. Precreate
         debug!("Sending precreate request...");
-        let precreate_url = format!("{}file?method=precreate&access_token={}", BASE_URL, access_token);
+        let precreate_url = format!(
+            "{}file?method=precreate&access_token={}",
+            BASE_URL, access_token
+        );
         let precreate_data = serde_json::json!({
             "path": remote_full_path,
             "size": file_size,
@@ -406,9 +403,7 @@ impl BaiduPanUploader {
             anyhow::bail!("Pre-upload failed: errno {}", precreate_result.errno);
         }
 
-        let upload_id = precreate_result
-            .uploadid
-            .context("No upload ID returned")?;
+        let upload_id = precreate_result.uploadid.context("No upload ID returned")?;
         info!("Pre-upload successful. Upload ID: {}", upload_id);
 
         // 2.1 Locate upload server
@@ -473,7 +468,10 @@ impl BaiduPanUploader {
 
         // 4. Create file
         debug!("Creating file...");
-        let create_url = format!("{}file?method=create&access_token={}", BASE_URL, access_token);
+        let create_url = format!(
+            "{}file?method=create&access_token={}",
+            BASE_URL, access_token
+        );
         let create_data = serde_json::json!({
             "path": remote_full_path,
             "size": file_size,

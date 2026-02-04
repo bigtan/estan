@@ -2,8 +2,8 @@
 #[test]
 #[ignore]
 fn real_notify_chanify() {
-    use estan::notify::chanify::ChanifyNotifier;
     use estan::notify::Notifier;
+    use estan::notify::chanify::ChanifyNotifier;
     use std::env;
 
     let url = env::var("CHANIFY_URL").expect("CHANIFY_URL missing");
@@ -19,8 +19,8 @@ fn real_notify_chanify() {
 #[test]
 #[ignore]
 fn real_notify_email() {
-    use estan::notify::email::EmailNotifier;
     use estan::notify::Notifier;
+    use estan::notify::email::EmailNotifier;
     use std::env;
 
     let sender = env::var("EMAIL_SENDER").expect("EMAIL_SENDER missing");
@@ -43,8 +43,8 @@ fn real_notify_email() {
 #[test]
 #[ignore]
 fn real_notify_pushgo() {
-    use estan::notify::pushgo::PushgoNotifier;
     use estan::notify::Notifier;
+    use estan::notify::pushgo::PushgoNotifier;
     use std::env;
 
     let url = env::var("PUSHGO_URL").expect("PUSHGO_URL missing");
@@ -55,9 +55,7 @@ fn real_notify_pushgo() {
     let icon = env::var("PUSHGO_ICON").ok();
     let image = env::var("PUSHGO_IMAGE").ok();
 
-    let notifier = PushgoNotifier::new(
-        url, api_token, hex_key, channel_id, password, icon, image,
-    );
+    let notifier = PushgoNotifier::new(url, api_token, hex_key, channel_id, password, icon, image);
     let ok = notifier
         .send("estan notify test", "pushgo test message")
         .unwrap();

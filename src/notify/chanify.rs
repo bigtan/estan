@@ -3,8 +3,8 @@ use reqwest::header::CONTENT_TYPE;
 use serde_json::json;
 use tracing::{debug, error, info};
 
-use crate::notify::Notifier;
 use crate::Result;
+use crate::notify::Notifier;
 
 pub struct ChanifyNotifier {
     url: String,

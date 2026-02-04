@@ -1,16 +1,16 @@
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes128Gcm, Aes256Gcm, Nonce};
-use base64::engine::general_purpose::STANDARD as Base64Standard;
-use base64::Engine;
 use anyhow::anyhow;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as Base64Standard;
 use rand::RngCore;
 use reqwest::blocking::Client;
 use reqwest::header::CONTENT_TYPE;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tracing::{debug, error, info};
 
-use crate::notify::Notifier;
 use crate::Result;
+use crate::notify::Notifier;
 
 pub struct PushgoNotifier {
     url: String,
@@ -54,23 +54,21 @@ impl PushgoNotifier {
 
         let ciphertext_with_tag = match key_bytes.len() {
             16 => {
-                let cipher = Aes128Gcm::new_from_slice(&key_bytes)
-                    .map_err(|e| anyhow!("{:?}", e))?;
+                let cipher =
+                    Aes128Gcm::new_from_slice(&key_bytes).map_err(|e| anyhow!("{:?}", e))?;
                 cipher
                     .encrypt(nonce, plaintext)
                     .map_err(|e| anyhow!("{:?}", e))?
             }
             32 => {
-                let cipher = Aes256Gcm::new_from_slice(&key_bytes)
-                    .map_err(|e| anyhow!("{:?}", e))?;
+                let cipher =
+                    Aes256Gcm::new_from_slice(&key_bytes).map_err(|e| anyhow!("{:?}", e))?;
                 cipher
                     .encrypt(nonce, plaintext)
                     .map_err(|e| anyhow!("{:?}", e))?
             }
             _ => {
-                return Err(anyhow!(
-                    "PUSHGO_HEX_KEY must be 16 or 32 bytes in hex"
-                ));
+                return Err(anyhow!("PUSHGO_HEX_KEY must be 16 or 32 bytes in hex"));
             }
         };
 

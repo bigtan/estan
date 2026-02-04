@@ -3,8 +3,8 @@ use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
 use tracing::{debug, error, info};
 
-use crate::notify::Notifier;
 use crate::Result;
+use crate::notify::Notifier;
 
 pub struct EmailNotifier {
     sender: String,
@@ -73,7 +73,6 @@ impl EmailNotifier {
             }
         }
     }
-
 }
 
 impl Notifier for EmailNotifier {

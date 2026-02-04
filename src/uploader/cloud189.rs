@@ -7,12 +7,12 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use aes::Aes128;
-use anyhow::{anyhow, Context};
-use base64::engine::general_purpose::STANDARD as BASE64_STD;
+use anyhow::{Context, anyhow};
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_STD;
+use chrono::Local;
 use cipher::generic_array::GenericArray;
 use cipher::{BlockEncrypt, KeyInit};
-use chrono::Local;
 use hmac::{Hmac, Mac};
 use httpdate::fmt_http_date;
 use quick_xml::de::from_str as xml_from_str;
@@ -29,8 +29,8 @@ use tracing::{info, warn};
 use url::Url;
 use uuid::Uuid;
 
-use crate::uploader::Uploader;
 use crate::Result;
+use crate::uploader::Uploader;
 use urlencoding::decode as url_decode;
 
 const API_BASE: &str = "https://api.cloud.189.cn";
@@ -575,11 +575,7 @@ impl Cloud189Client {
             "https://open.e.189.cn/api/logbox/oauth2/getUUID.do",
             &[("appId".to_string(), app_key)],
         )?;
-        let resp = self
-            .client
-            .get(uuid_url)
-            .send()
-            .context("get qr uuid")?;
+        let resp = self.client.get(uuid_url).send().context("get qr uuid")?;
         let qr: QrCodeResp = resp.json().context("decode qr uuid")?;
 
         let decoded_uuid = url_decode(&qr.encodeuuid)
@@ -964,11 +960,7 @@ impl Cloud189Client {
         Ok(resp)
     }
 
-    fn upload_get_with_retry(
-        &self,
-        path: &str,
-        params: &[(String, String)],
-    ) -> Result<Response> {
+    fn upload_get_with_retry(&self, path: &str, params: &[(String, String)]) -> Result<Response> {
         let mut attempt = 0;
         loop {
             attempt += 1;
