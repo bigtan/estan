@@ -39,6 +39,8 @@ const LOGIN_URL: &str = "https://cloud.189.cn/unifyLoginForPC.action";
 const OPEN_APP_CONF_URL: &str = "https://open.e.189.cn/api/logbox/oauth2/appConf.do";
 const OPEN_ENCRYPT_CONF_URL: &str = "https://open.e.189.cn/api/logbox/config/encryptConf.do";
 const OPEN_LOGIN_SUBMIT_URL: &str = "https://open.e.189.cn/api/logbox/oauth2/loginSubmit.do";
+const OPEN_OAUTH_BASE: &str = "https://open.e.189.cn";
+const APP_ID: &str = "9317140619";
 const ROOT_FOLDER_ID: &str = "-11";
 const SLICE_SIZE: usize = 10 * 1024 * 1024;
 const UPLOAD_PART_MAX_RETRIES: u32 = 3;
@@ -128,12 +130,21 @@ impl Cloud189Uploader {
         api.init_cookies_from_config();
 
         if !api.has_valid_session() {
-            if use_qr || username.is_none() || password.is_none() {
-                api.login_qr()?;
-            } else {
-                let user = username.ok_or_else(|| anyhow!("missing CLOUD189_USERNAME"))?;
-                let pass = password.ok_or_else(|| anyhow!("missing CLOUD189_PASSWORD"))?;
-                api.login(&user, &pass)?;
+            let refreshed = match api.try_refresh_session() {
+                Ok(ok) => ok,
+                Err(err) => {
+                    warn!("refresh session failed, fallback to login: {err}");
+                    false
+                }
+            };
+            if !refreshed {
+                if use_qr || username.is_none() || password.is_none() {
+                    api.login_qr()?;
+                } else {
+                    let user = username.ok_or_else(|| anyhow!("missing CLOUD189_USERNAME"))?;
+                    let pass = password.ok_or_else(|| anyhow!("missing CLOUD189_PASSWORD"))?;
+                    api.login(&user, &pass)?;
+                }
             }
         }
 
@@ -141,6 +152,7 @@ impl Cloud189Uploader {
     }
 
     pub fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool> {
+        self.client.ensure_session()?;
         let remote_dir = if dest_path.trim().is_empty() {
             "/"
         } else {
@@ -224,14 +236,38 @@ struct EncryptConfData {
 struct SessionResp {
     #[serde(rename = "loginName", default)]
     login_name: String,
+    #[serde(rename = "keepAlive", default)]
+    keep_alive: i64,
+    #[serde(rename = "getFileDiffSpan", default)]
+    file_diff_span: i64,
+    #[serde(rename = "getUserInfoSpan", default)]
+    user_info_span: i64,
     #[serde(rename = "sessionKey", default)]
     key: String,
     #[serde(rename = "sessionSecret", default)]
     secret: String,
+    #[serde(rename = "familySessionKey", default)]
+    family_key: String,
+    #[serde(rename = "familySessionSecret", default)]
+    family_secret: String,
     #[serde(rename = "accessToken", default)]
     access_token: String,
     #[serde(rename = "refreshToken", default)]
     refresh_token: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RefreshTokenResp {
+    #[serde(rename = "accessToken", default)]
+    access_token: String,
+    #[serde(rename = "refreshToken", default)]
+    refresh_token: String,
+}
+
+#[derive(Debug)]
+struct ApiError {
+    code: String,
+    message: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -435,9 +471,65 @@ impl Cloud189Client {
             .unwrap_or(false)
     }
 
+    fn ensure_session(&mut self) -> Result<()> {
+        if self.try_refresh_session()? {
+            return Ok(());
+        }
+        if self.has_valid_session() {
+            return Ok(());
+        }
+        Err(anyhow!("missing valid session, please login again"))
+    }
+
+    fn try_refresh_session(&mut self) -> Result<bool> {
+        let Some(session) = self.config.session.clone() else {
+            return Ok(false);
+        };
+
+        if !session.access_token.is_empty() {
+            match self.refresh_session(&session.access_token) {
+                Ok(updated) => {
+                    self.update_session(updated);
+                    save_config(&self.config)?;
+                    return Ok(true);
+                }
+                Err(err) => {
+                    if !is_user_invalid_token(&err) {
+                        return Err(err);
+                    }
+                }
+            }
+        }
+
+        if session.refresh_token.is_empty() {
+            return Ok(false);
+        }
+
+        let refreshed = self.refresh_token(&session.refresh_token)?;
+        self.update_session(session_resp_from_tokens(
+            refreshed.access_token,
+            refreshed.refresh_token,
+        ));
+        save_config(&self.config)?;
+
+        let access = self
+            .config
+            .session
+            .as_ref()
+            .map(|s| s.access_token.clone())
+            .unwrap_or_default();
+        if access.is_empty() {
+            return Ok(false);
+        }
+        let updated = self.refresh_session(&access)?;
+        self.update_session(updated);
+        save_config(&self.config)?;
+        Ok(true)
+    }
+
     fn login(&mut self, username: &str, password: &str) -> Result<()> {
         let params = vec![
-            ("appId".to_string(), "9317140619".to_string()),
+            ("appId".to_string(), APP_ID.to_string()),
             ("clientType".to_string(), "10020".to_string()),
             ("timeStamp".to_string(), format!("{}", chrono_millis())),
             (
@@ -521,6 +613,11 @@ impl Cloud189Client {
             login_name: session.login_name,
             key: session.key,
             secret: session.secret,
+            keep_alive: session.keep_alive,
+            file_diff_span: session.file_diff_span,
+            user_info_span: session.user_info_span,
+            family_key: session.family_key,
+            family_secret: session.family_secret,
             access_token: session.access_token,
             refresh_token: session.refresh_token,
             ..Default::default()
@@ -536,7 +633,7 @@ impl Cloud189Client {
 
     fn login_qr(&mut self) -> Result<()> {
         let params = vec![
-            ("appId".to_string(), "9317140619".to_string()),
+            ("appId".to_string(), APP_ID.to_string()),
             ("clientType".to_string(), "10020".to_string()),
             ("timeStamp".to_string(), format!("{}", chrono_millis())),
             (
@@ -612,6 +709,11 @@ impl Cloud189Client {
                         login_name: session.login_name,
                         key: session.key,
                         secret: session.secret,
+                        keep_alive: session.keep_alive,
+                        file_diff_span: session.file_diff_span,
+                        user_info_span: session.user_info_span,
+                        family_key: session.family_key,
+                        family_secret: session.family_secret,
                         access_token: session.access_token,
                         refresh_token: session.refresh_token,
                         ..Default::default()
@@ -727,8 +829,98 @@ impl Cloud189Client {
             .body(encode_form_urlencoded(&params))
             .send()
             .context("get session")?;
-        let session: SessionResp = resp.json().context("decode session")?;
+        let session: SessionResp = parse_json_with_error(resp, "get session")?;
         Ok(session)
+    }
+
+    fn refresh_session(&self, access_token: &str) -> Result<SessionResp> {
+        let mut url =
+            with_client_params(Url::parse(&format!("{API_BASE}/getSessionForPC.action"))?);
+        url.query_pairs_mut()
+            .append_pair("appId", APP_ID)
+            .append_pair("accessToken", access_token);
+        let resp = self
+            .client
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/json;charset=UTF-8")
+            .send()
+            .context("refresh session")?;
+        let session: SessionResp = parse_json_with_error(resp, "refresh session")?;
+        Ok(session)
+    }
+
+    fn refresh_token(&self, refresh_token: &str) -> Result<RefreshTokenResp> {
+        let resp = self
+            .client
+            .post(format!("{OPEN_OAUTH_BASE}/api/oauth2/refreshToken.do"))
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                "application/x-www-form-urlencoded",
+            )
+            .header(reqwest::header::ACCEPT, "application/json;charset=UTF-8")
+            .body(encode_form_urlencoded(&[
+                ("clientId".to_string(), APP_ID.to_string()),
+                ("refreshToken".to_string(), refresh_token.to_string()),
+                ("grantType".to_string(), "refresh_token".to_string()),
+                ("format".to_string(), "json".to_string()),
+            ]))
+            .send()
+            .context("refresh token")?;
+        let token: RefreshTokenResp = parse_json_with_error(resp, "refresh token")?;
+        Ok(token)
+    }
+
+    fn update_session(&mut self, session: SessionResp) {
+        let current = self.config.session.clone().unwrap_or_default();
+        let merged = Session {
+            login_name: if session.login_name.is_empty() {
+                current.login_name
+            } else {
+                session.login_name
+            },
+            key: if session.key.is_empty() { current.key } else { session.key },
+            secret: if session.secret.is_empty() {
+                current.secret
+            } else {
+                session.secret
+            },
+            keep_alive: if session.keep_alive == 0 {
+                current.keep_alive
+            } else {
+                session.keep_alive
+            },
+            file_diff_span: if session.file_diff_span == 0 {
+                current.file_diff_span
+            } else {
+                session.file_diff_span
+            },
+            user_info_span: if session.user_info_span == 0 {
+                current.user_info_span
+            } else {
+                session.user_info_span
+            },
+            family_key: if session.family_key.is_empty() {
+                current.family_key
+            } else {
+                session.family_key
+            },
+            family_secret: if session.family_secret.is_empty() {
+                current.family_secret
+            } else {
+                session.family_secret
+            },
+            access_token: if session.access_token.is_empty() {
+                current.access_token
+            } else {
+                session.access_token
+            },
+            refresh_token: if session.refresh_token.is_empty() {
+                current.refresh_token
+            } else {
+                session.refresh_token
+            },
+        };
+        self.config.session = Some(merged);
     }
 
     fn resolve_folder(&self, remote_dir: &str, create: bool) -> Result<String> {
@@ -1197,6 +1389,109 @@ fn parse_json_response<T: DeserializeOwned>(resp: Response, label: &str) -> Resu
             snippet(&text)
         )
     })
+}
+
+fn session_resp_from_tokens(access_token: String, refresh_token: String) -> SessionResp {
+    SessionResp {
+        login_name: String::new(),
+        keep_alive: 0,
+        file_diff_span: 0,
+        user_info_span: 0,
+        key: String::new(),
+        secret: String::new(),
+        family_key: String::new(),
+        family_secret: String::new(),
+        access_token,
+        refresh_token,
+    }
+}
+
+fn parse_json_with_error<T: DeserializeOwned>(resp: Response, label: &str) -> Result<T> {
+    let status = resp.status();
+    let text = resp.text().context("read response body")?;
+    let value: serde_json::Value = serde_json::from_str(&text).with_context(|| {
+        format!(
+            "decode {label} json (status {status}) body: {}",
+            snippet(&text)
+        )
+    })?;
+    if let Some(err) = api_error(&value) {
+        return Err(anyhow!("{}: {}", err.code, err.message));
+    }
+    serde_json::from_value(value).with_context(|| {
+        format!(
+            "decode {label} body (status {status}) body: {}",
+            snippet(&text)
+        )
+    })
+}
+
+fn api_error(value: &serde_json::Value) -> Option<ApiError> {
+    let res_code = value.get("res_code");
+    if let Some(code) = res_code {
+        let mut is_error = false;
+        if let Some(n) = code.as_i64() {
+            is_error = n != 0;
+        } else if let Some(s) = code.as_str() {
+            is_error = !s.is_empty() && s != "0";
+        } else if !code.is_null() {
+            is_error = true;
+        }
+        if is_error {
+            let msg = value
+                .get("res_message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            let code_str = code.as_str().map(|s| s.to_string()).unwrap_or_else(|| code.to_string());
+            return Some(ApiError {
+                code: code_str,
+                message: msg.to_string(),
+            });
+        }
+    }
+
+    if let Some(code) = value.get("code").and_then(|v| v.as_str()) {
+        if !code.is_empty() && code != "SUCCESS" {
+            let msg = value
+                .get("msg")
+                .and_then(|v| v.as_str())
+                .or_else(|| value.get("message").and_then(|v| v.as_str()))
+                .unwrap_or("unknown error");
+            return Some(ApiError {
+                code: code.to_string(),
+                message: msg.to_string(),
+            });
+        }
+    }
+
+    if let Some(code) = value.get("errorCode").and_then(|v| v.as_str()) {
+        if !code.is_empty() {
+            let msg = value
+                .get("errorMsg")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown error");
+            return Some(ApiError {
+                code: code.to_string(),
+                message: msg.to_string(),
+            });
+        }
+    }
+
+    if let Some(err) = value.get("error").and_then(|v| v.as_str()) {
+        if !err.is_empty() {
+            return Some(ApiError {
+                code: "error".to_string(),
+                message: err.to_string(),
+            });
+        }
+    }
+
+    None
+}
+
+fn is_user_invalid_token(err: &anyhow::Error) -> bool {
+    let msg = err.to_string();
+    msg.contains("UserInvalidOpenToken")
 }
 
 fn snippet(text: &str) -> String {
