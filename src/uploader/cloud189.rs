@@ -1185,15 +1185,18 @@ fn hmac_sha1_hex(data: &str, key: &[u8]) -> String {
 fn parse_json_response<T: DeserializeOwned>(resp: Response, label: &str) -> Result<T> {
     let status = resp.status();
     let text = resp.text().context("read response body")?;
-    let value: serde_json::Value = serde_json::from_str(&text)
-        .with_context(|| format!("decode {label} json (status {status})"))?;
-    if value.get("data").is_none() {
-        return Err(anyhow!(
-            "decode {label}: missing field `data` (status {status}) body: {}",
+    let value: serde_json::Value = serde_json::from_str(&text).with_context(|| {
+        format!(
+            "decode {label} json (status {status}) body: {}",
             snippet(&text)
-        ));
-    }
-    serde_json::from_value(value).with_context(|| format!("decode {label} body"))
+        )
+    })?;
+    serde_json::from_value(value).with_context(|| {
+        format!(
+            "decode {label} body (status {status}) body: {}",
+            snippet(&text)
+        )
+    })
 }
 
 fn snippet(text: &str) -> String {
