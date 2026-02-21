@@ -3,7 +3,7 @@ use aes_gcm::{Aes128Gcm, Aes256Gcm, Nonce};
 use anyhow::anyhow;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as Base64Standard;
-use rand::RngCore;
+use rand::Rng;
 use reqwest::blocking::Client;
 use reqwest::header::CONTENT_TYPE;
 use serde_json::{Map, Value, json};
