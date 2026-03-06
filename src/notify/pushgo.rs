@@ -79,7 +79,11 @@ impl PushgoNotifier {
 }
 
 impl Notifier for PushgoNotifier {
-    fn send(&self, subject: &str, message: &str) -> Result<bool> {
+    fn name(&self) -> &str {
+        "Pushgo"
+    }
+
+    fn send(&self, subject: &str, message: &str) -> Result<()> {
         let pushgo_title = subject.to_string();
         let markdown_body = message.to_string();
 
@@ -121,10 +125,10 @@ impl Notifier for PushgoNotifier {
             Ok(response) => {
                 if response.status().is_success() {
                     info!("Pushgo notification sent: {}", subject);
-                    Ok(true)
+                    Ok(())
                 } else {
                     error!("Failed to send Pushgo notification: {}", response.status());
-                    Ok(false)
+                    anyhow::bail!("pushgo request failed: {}", response.status())
                 }
             }
             Err(e) => Err(e.into()),

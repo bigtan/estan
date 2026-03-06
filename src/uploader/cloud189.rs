@@ -7,12 +7,12 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use aes::Aes128;
+use aes::cipher::generic_array::GenericArray;
+use aes::cipher::{BlockEncrypt, KeyInit};
 use anyhow::{Context, anyhow};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STD;
 use chrono::Local;
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockEncrypt, KeyInit};
 use hmac::{Hmac, Mac};
 use httpdate::fmt_http_date;
 use quick_xml::de::from_str as xml_from_str;
@@ -151,7 +151,7 @@ impl Cloud189Uploader {
         Ok(Self { client: api })
     }
 
-    pub fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool> {
+    pub fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<()> {
         self.client.ensure_session()?;
         let remote_dir = if dest_path.trim().is_empty() {
             "/"
@@ -163,7 +163,7 @@ impl Cloud189Uploader {
         }
         let folder_id = self.client.resolve_folder(remote_dir, true)?;
         self.client.upload_file(Path::new(file_path), &folder_id)?;
-        Ok(true)
+        Ok(())
     }
 }
 
@@ -172,7 +172,7 @@ impl Uploader for Cloud189Uploader {
         "Cloud189"
     }
 
-    fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool> {
+    fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<()> {
         Cloud189Uploader::upload(self, file_path, dest_path)
     }
 }
@@ -878,7 +878,11 @@ impl Cloud189Client {
             } else {
                 session.login_name
             },
-            key: if session.key.is_empty() { current.key } else { session.key },
+            key: if session.key.is_empty() {
+                current.key
+            } else {
+                session.key
+            },
             secret: if session.secret.is_empty() {
                 current.secret
             } else {
@@ -1442,7 +1446,10 @@ fn api_error(value: &serde_json::Value) -> Option<ApiError> {
                 .get("res_message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown error");
-            let code_str = code.as_str().map(|s| s.to_string()).unwrap_or_else(|| code.to_string());
+            let code_str = code
+                .as_str()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| code.to_string());
             return Some(ApiError {
                 code: code_str,
                 message: msg.to_string(),

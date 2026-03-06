@@ -354,7 +354,7 @@ impl BaiduPanUploader {
     }
 
     /// Upload file to Baidu Pan
-    pub fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool> {
+    pub fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<()> {
         let access_token = self.get_valid_access_token()?;
         let local_path = Path::new(file_path);
 
@@ -485,7 +485,7 @@ impl BaiduPanUploader {
 
         if create_result.errno == 0 {
             info!("File uploaded successfully to: {}", remote_full_path);
-            Ok(true)
+            Ok(())
         } else {
             anyhow::bail!("Failed to create file: errno {}", create_result.errno);
         }
@@ -497,7 +497,7 @@ impl Uploader for BaiduPanUploader {
         "BaiduPan"
     }
 
-    fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool> {
+    fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<()> {
         BaiduPanUploader::upload(self, file_path, dest_path)
     }
 }

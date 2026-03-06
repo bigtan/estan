@@ -4,7 +4,7 @@ use crate::Result;
 
 pub trait Uploader: Send {
     fn name(&self) -> &str;
-    fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool>;
+    fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<()>;
 }
 
 #[derive(Debug, Default, Clone)]
@@ -58,23 +58,22 @@ impl UploadManager {
     }
 
     pub fn upload_file(&mut self, file_path: &str, ctx: &UploadContext) -> Result<UploadResult> {
-        let mut overall_success = true;
+        if self.uploaders.is_empty() {
+            return Ok(UploadResult::empty());
+        }
+
         let mut results = Vec::with_capacity(self.uploaders.len());
 
         for (uploader, dest_path) in &mut self.uploaders {
             let expanded_path = ctx.expand(dest_path);
-            let success = uploader.upload(file_path, &expanded_path)?;
             let name = uploader.name().to_string();
-            results.push((name, success));
-            if !success {
-                overall_success = false;
+            match uploader.upload(file_path, &expanded_path) {
+                Ok(()) => results.push(UploadAttempt::success(name)),
+                Err(err) => results.push(UploadAttempt::failure(name, err.to_string())),
             }
         }
 
-        Ok(UploadResult {
-            overall_success,
-            results,
-        })
+        Ok(UploadResult::from_attempts(results))
     }
 }
 
@@ -84,10 +83,53 @@ impl Default for UploadManager {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UploadAttempt {
+    pub name: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+impl UploadAttempt {
+    pub fn success(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            success: true,
+            error: None,
+        }
+    }
+
+    pub fn failure(name: impl Into<String>, error: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            success: false,
+            error: Some(error.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UploadResult {
     pub overall_success: bool,
-    pub results: Vec<(String, bool)>,
+    pub attempts: Vec<UploadAttempt>,
+}
+
+impl UploadResult {
+    pub fn empty() -> Self {
+        Self {
+            overall_success: false,
+            attempts: Vec::new(),
+        }
+    }
+
+    pub fn from_attempts(attempts: Vec<UploadAttempt>) -> Self {
+        let overall_success =
+            !attempts.is_empty() && attempts.iter().all(|attempt| attempt.success);
+        Self {
+            overall_success,
+            attempts,
+        }
+    }
 }
 
 fn expand_placeholders(template: &str, vars: &HashMap<String, String>) -> String {
@@ -159,10 +201,14 @@ mod tests {
             &self.name
         }
 
-        fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<bool> {
+        fn upload(&mut self, file_path: &str, dest_path: &str) -> Result<()> {
             self.uploads
                 .push((file_path.to_string(), dest_path.to_string()));
-            Ok(self.succeed)
+            if self.succeed {
+                Ok(())
+            } else {
+                anyhow::bail!("{} failed", self.name);
+            }
         }
     }
 
@@ -193,10 +239,27 @@ mod tests {
 
         let result = manager.upload_file("file.tar.zst", &ctx).unwrap();
         assert!(!result.overall_success);
-        assert_eq!(result.results.len(), 2);
-        assert_eq!(result.results[0].0, "A");
-        assert_eq!(result.results[0].1, true);
-        assert_eq!(result.results[1].0, "B");
-        assert_eq!(result.results[1].1, false);
+        assert_eq!(result.attempts.len(), 2);
+        assert_eq!(result.attempts[0].name, "A");
+        assert!(result.attempts[0].success);
+        assert_eq!(result.attempts[1].name, "B");
+        assert!(!result.attempts[1].success);
+        assert!(result.attempts[1].error.is_some());
+    }
+
+    #[test]
+    fn upload_manager_continues_after_failure() {
+        let mut manager = UploadManager::new();
+        let ctx = UploadContext::with_date("20250203");
+
+        manager.add(FakeUploader::new("A", false), "/x/{date}");
+        manager.add(FakeUploader::new("B", true), "/y/{date}");
+
+        let result = manager.upload_file("file.tar.zst", &ctx).unwrap();
+        assert_eq!(result.attempts.len(), 2);
+        assert_eq!(result.attempts[0].name, "A");
+        assert!(!result.attempts[0].success);
+        assert_eq!(result.attempts[1].name, "B");
+        assert!(result.attempts[1].success);
     }
 }

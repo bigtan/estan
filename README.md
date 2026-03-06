@@ -35,14 +35,27 @@ estan = { git = "ssh://git@github.com/OWNER/estan.git", branch = "main", feature
   - `Uploader` trait
   - `UploadManager`
   - `UploadContext`
+  - `UploadAttempt`
+  - `UploadResult`
   - `BaiduPanUploader` (feature `uploader-baidu`)
   - `Cloud189Uploader` (feature `uploader-cloud189`)
 - `estan::notify`
   - `Notifier` trait
   - `NotificationManager`
+  - `NotificationAttempt`
+  - `NotificationResult`
   - `chanify::ChanifyNotifier` (feature `notify-chanify`)
   - `email::EmailNotifier` (feature `notify-email`)
   - `pushgo::PushgoNotifier` (feature `notify-pushgo`)
+
+## API Notes
+
+- `Uploader::upload()` now returns `Result<()>`. Success is `Ok(())`; all failures are reported as `Err`.
+- `UploadManager::upload_file()` never stops at the first provider failure. It returns an `UploadResult`
+  with one `UploadAttempt` per uploader, including error messages.
+- `Notifier::send()` now returns `Result<()>`. `NotificationManager::send()` aggregates every channel into
+  a `NotificationResult` instead of short-circuiting on the first error.
+- `EmailNotifier` validates sender and recipient addresses and returns an error instead of panicking.
 
 ## Real Network Tests
 

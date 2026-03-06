@@ -16,8 +16,7 @@ fn real_upload_baidu() {
     assert!(Path::new(&file_path).is_file());
 
     let mut uploader = BaiduPanUploader::new(app_key, app_secret, config_path).unwrap();
-    let ok = uploader.upload(&file_path, &dest_path).unwrap();
-    assert!(ok);
+    uploader.upload(&file_path, &dest_path).unwrap();
 }
 
 #[cfg(feature = "uploader-cloud189")]
@@ -63,7 +62,6 @@ fn real_upload_cloud189() {
     println!("Initializing Cloud189 uploader...");
     let mut uploader = Cloud189Uploader::new(config_path, username, password, use_qr).unwrap();
     println!("Starting Cloud189 upload...");
-    let ok = uploader.upload(&file_path, &dest_path).unwrap();
-    println!("Cloud189 upload finished. ok={}", ok);
-    assert!(ok);
+    uploader.upload(&file_path, &dest_path).unwrap();
+    println!("Cloud189 upload finished.");
 }

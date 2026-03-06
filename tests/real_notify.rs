@@ -9,10 +9,9 @@ fn real_notify_chanify() {
     let url = env::var("CHANIFY_URL").expect("CHANIFY_URL missing");
     let token = env::var("CHANIFY_TOKEN").expect("CHANIFY_TOKEN missing");
     let notifier = ChanifyNotifier::new(url, token);
-    let ok = notifier
+    notifier
         .send("estan notify test", "chanify test message")
         .unwrap();
-    assert!(ok);
 }
 
 #[cfg(feature = "notify-email")]
@@ -33,10 +32,9 @@ fn real_notify_email() {
         .unwrap_or(465);
 
     let notifier = EmailNotifier::with_smtp(sender, password, recipient, smtp_host, smtp_port);
-    let ok = notifier
+    notifier
         .send("estan notify test", "email test message")
         .unwrap();
-    assert!(ok);
 }
 
 #[cfg(feature = "notify-pushgo")]
@@ -56,8 +54,7 @@ fn real_notify_pushgo() {
     let image = env::var("PUSHGO_IMAGE").ok();
 
     let notifier = PushgoNotifier::new(url, api_token, hex_key, channel_id, password, icon, image);
-    let ok = notifier
+    notifier
         .send("estan notify test", "pushgo test message")
         .unwrap();
-    assert!(ok);
 }

@@ -23,7 +23,11 @@ impl ChanifyNotifier {
 }
 
 impl Notifier for ChanifyNotifier {
-    fn send(&self, subject: &str, message: &str) -> Result<bool> {
+    fn name(&self) -> &str {
+        "Chanify"
+    }
+
+    fn send(&self, subject: &str, message: &str) -> Result<()> {
         let payload = json!({
             "token": self.token,
             "title": subject,
@@ -46,10 +50,10 @@ impl Notifier for ChanifyNotifier {
             Ok(response) => {
                 if response.status().is_success() {
                     info!("Chanify notification sent: {}", subject);
-                    Ok(true)
+                    Ok(())
                 } else {
                     error!("Failed to send Chanify notification: {}", response.status());
-                    Ok(false)
+                    anyhow::bail!("chanify request failed: {}", response.status())
                 }
             }
             Err(e) => Err(e.into()),
