@@ -1,2 +1,4 @@
 /target
 /OpenList-main
+.gemini/
+gha-creds-*.json
